@@ -59,6 +59,10 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: '1'
         run: |
+          # setup-python no longer guarantees setuptools/wheel in every
+          # interpreter image. Install the build tools explicitly so the
+          # no-build-isolation smoke gate is deterministic across 3.10–3.13.
+          python -m pip install --upgrade 'setuptools>=61' wheel
           wheel_dir="${RUNNER_TEMP}/lad-wheel"
           install_dir="${RUNNER_TEMP}/lad-wheel-install"
           mkdir -p "$wheel_dir" "$install_dir"
