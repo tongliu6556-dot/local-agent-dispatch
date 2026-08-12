@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Task Packet",
+  "type": "object",
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "packet_id": { "type": "string", "minLength": 1 },
+    "job_id": { "type": "string", "minLength": 1 },
+    "write_scope": { "type": "string", "minLength": 1 },
+    "validation_required": { "const": true },
+    "required_artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "attempts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["attempt_id", "adapter", "transport", "model"],
+        "properties": {
+          "attempt_id": { "type": "string", "minLength": 1 },
+          "adapter": { "type": "string", "minLength": 1 },
+          "transport": { "enum": ["local", "ssh"] },
+          "model": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": true
+      }
+    },
+    "legacy_compatibility": { "type": "boolean" }
+  },
+  "required": ["schema_version"],
+  "additionalProperties": true,
+  "oneOf": [
+    { "required": ["packet_id", "job_id", "write_scope", "validation_required", "required_artifacts", "attempts"] },
+    { "required": ["legacy_compatibility", "job_id"] }
+  ]
+}
