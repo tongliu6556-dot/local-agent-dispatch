@@ -33,7 +33,7 @@ class LadCliScaffoldTests(unittest.TestCase):
     def test_version_command(self) -> None:
         result = self.run_cli("--version")
         self.assertEqual(0, result.returncode)
-        self.assertEqual("0.1.0\n", result.stdout)
+        self.assertEqual("0.1.0a1\n", result.stdout)
 
     def test_doctor_offline_is_local_only(self) -> None:
         result = self.run_cli("doctor", "--offline")
