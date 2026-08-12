@@ -165,6 +165,8 @@ class UsageApiTests(unittest.TestCase):
             code, stdout, stderr = run_cli(
                 "--skip-discovery",
                 "--usage-api",
+                "--usage-endpoint",
+                "https://usage.example.test/v1/usage",
                 "--usage-api-key-env",
                 "LAD_TEST_GO_KEY",
             )

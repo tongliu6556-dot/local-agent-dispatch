@@ -2,15 +2,15 @@
 """Provider-free OpenCode Go quota-evidence snapshot for the planner.
 
 Runs the existing read-only OpenCode snapshot commands and/or imports an
-explicit, user-supplied read-only console snapshot.  It never sends a model
-prompt, never emits auth credential values, and only calls the documented usage
-endpoint when explicitly requested.  Output is stable, redacted JSON suitable for the
+explicit, user-supplied read-only console snapshot. It never sends a model
+prompt, never emits auth credential values, and only calls a user-supplied
+HTTPS usage endpoint when explicitly requested. Output is stable, redacted JSON suitable for the
 planner.
 
 The machine-readable OpenCode CLI snapshot does not expose the current
 remaining five-hour/weekly/monthly balance; that remains ``unknown`` unless a
-documented usage API or console snapshot is imported.  Unknown is never mapped
-to zero or full.
+user-supplied console snapshot or separately verified usage endpoint is imported.
+Unknown is never mapped to zero or full.
 """
 
 from __future__ import annotations
@@ -78,7 +78,7 @@ def _load_opencode_go_key(path: pathlib.Path) -> str:
 
 
 def _fetch_usage_api(endpoint: str, api_key: str, timeout: float) -> dict[str, Any]:
-    """Fetch the documented read-only Go usage endpoint without logging auth."""
+    """Fetch an explicitly verified read-only usage endpoint without logging auth."""
     request = urllib.request.Request(
         endpoint,
         headers={
@@ -267,12 +267,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--usage-api",
         action="store_true",
-        help="Call the documented OpenCode Go usage endpoint (read-only; explicit opt-in).",
+        help="Call an explicitly verified HTTPS usage endpoint (read-only; explicit opt-in).",
     )
     parser.add_argument(
         "--usage-endpoint",
-        default="https://opencode.ai/zen/go/v1/usage",
-        help="Documented Go usage endpoint (override only for a compatible deployment).",
+        default=None,
+        help="Explicitly verified HTTPS usage endpoint; required with --usage-api.",
     )
     parser.add_argument(
         "--usage-api-key-env",
@@ -328,6 +328,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.usage_api and bool(args.usage_api_key_env) == bool(args.usage_use_auth_store):
         parser.error("--usage-api requires exactly one of --usage-api-key-env or --usage-use-auth-store")
+    if args.usage_api and not args.usage_endpoint:
+        parser.error("--usage-api requires --usage-endpoint; no balance URL is assumed")
+    if args.usage_endpoint and not str(args.usage_endpoint).startswith("https://"):
+        parser.error("--usage-endpoint must use https://")
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
     if args.stats_days <= 0:

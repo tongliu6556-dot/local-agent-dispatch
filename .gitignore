@@ -49,6 +49,7 @@ htmlcov/
 *.report.json
 *.state.json
 .codebase-memory/
+.hermes/
 
 # Common credential material. This is a guardrail, not a substitute for review.
 *.pem

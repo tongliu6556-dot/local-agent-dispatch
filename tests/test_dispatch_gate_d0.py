@@ -1038,6 +1038,19 @@ class OpenCodeGoIntegrationTests(unittest.TestCase):
         result = planner.plan(state, {"jobs": [job]}, max_lanes=1, horizon=1)
         self.assertEqual([], result["assignments"])
 
+    def test_opencode_balance_endpoint_is_not_assumed_by_preflight(self):
+        args = preflight.parse_args([])
+        self.assertIsNone(args.opencode_go_usage_endpoint)
+        explicit = preflight.parse_args(
+            ["--opencode-go-usage-endpoint", "https://usage.example.test/v1/usage"]
+        )
+        self.assertEqual(
+            "https://usage.example.test/v1/usage",
+            explicit.opencode_go_usage_endpoint,
+        )
+        with self.assertRaises(SystemExit):
+            preflight.parse_args(["--opencode-go-usage-endpoint", "http://insecure.test"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -819,11 +819,11 @@ def build_pools(
         go_health = str(go_source_pool.get("health") or "unknown")
         go_blocked_reason = None
     if go_quota_api_ok and isinstance(go_quota_effective, (int, float)):
-        # The official usage API is account-level evidence for the shared pool;
+        # A separately verified usage endpoint is account-level evidence for the shared pool;
         # it does not split DeepSeek from other Go models.
         go_source_pool["effective_remaining_percent"] = float(go_quota_effective)
         go_source_pool["quota_state"] = "known"
-        go_source_pool["quota_source"] = "official_usage_api"
+        go_source_pool["quota_source"] = "verified_usage_api"
         go_source_pool["quota_last_checked_at"] = go_quota.get("fetched_at_utc")
         go_source_pool["quota_evidence"] = {
             "source": "api",
@@ -835,17 +835,24 @@ def build_pools(
         }
         if float(go_quota_effective) <= 0.0:
             go_health = "quota_exhausted"
-            go_blocked_reason = "OpenCode Go shared quota exhausted according to official usage API"
-    elif go_quota and not go_quota_api_ok:
+            go_blocked_reason = "OpenCode Go shared quota exhausted according to verified usage API"
+    elif go_quota and not go_quota_api_ok and not go_quota.get("skipped"):
         quota_probe = go_quota.get("usage_api")
         quota_probe = quota_probe if isinstance(quota_probe, dict) else {}
         go_source_pool["quota_state"] = "unknown"
-        go_source_pool["quota_source"] = "official_usage_api_failed"
+        go_source_pool["quota_source"] = "verified_usage_api_failed"
         go_source_pool["quota_error"] = {
             "error_type": quota_probe.get("error_type"),
             "http_status": quota_probe.get("http_status"),
             "error": quota_probe.get("error"),
         }
+    elif go_quota.get("skipped"):
+        go_source_pool["quota_state"] = "unknown"
+        go_source_pool["quota_source"] = "not_requested"
+        go_source_pool["quota_note"] = (
+            "No explicitly verified machine-readable usage endpoint was configured; "
+            "use a console export or an authorized bounded probe."
+        )
     pools["opencode.go"] = {
         **go_source_pool,
         "provider": "opencode",
@@ -938,8 +945,18 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--cwd", default=str(pathlib.Path.cwd()))
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--skip-antigravity-usage", action="store_true")
+    parser.add_argument(
+        "--opencode-go-usage-endpoint",
+        help=(
+            "Explicitly verified HTTPS usage endpoint for OpenCode Go. The "
+            "default is unset: catalog discovery never probes a guessed balance URL."
+        ),
+    )
     parser.add_argument("--continuity-run-dir")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.opencode_go_usage_endpoint and not str(args.opencode_go_usage_endpoint).startswith("https://"):
+        parser.error("--opencode-go-usage-endpoint must use https://")
+    return args
 
 
 def main(argv: list[str]) -> int:
@@ -1001,19 +1018,22 @@ def main(argv: list[str]) -> int:
             "--timeout",
             str(max(5.0, args.timeout)),
         ]
-        # OpenCode Go's current balance is not in the model catalog.  Use the
-        # documented read-only usage route with the already configured local
-        # auth store; the helper never emits the key and preserves unknown on
-        # auth/network/API failure.
-        commands["opencode_go_quota"] = [
-            sys.executable,
-            str(SCRIPT_DIR / "opencode_go_quota_snapshot.py"),
-            "--skip-discovery",
-            "--usage-api",
-            "--usage-use-auth-store",
-            "--timeout",
-            str(max(5.0, args.timeout)),
-        ]
+        # The public Go docs expose limits and a console, but do not promise a
+        # machine-readable balance endpoint. Never guess/probe one during a
+        # normal preflight. A user may provide a separately verified HTTPS
+        # endpoint; only then is the authenticated read-only helper enabled.
+        if args.opencode_go_usage_endpoint:
+            commands["opencode_go_quota"] = [
+                sys.executable,
+                str(SCRIPT_DIR / "opencode_go_quota_snapshot.py"),
+                "--skip-discovery",
+                "--usage-api",
+                "--usage-endpoint",
+                str(args.opencode_go_usage_endpoint),
+                "--usage-use-auth-store",
+                "--timeout",
+                str(max(5.0, args.timeout)),
+            ]
     if cli_present("antigravity") and not args.skip_antigravity_usage:
         commands["antigravity_usage"] = [
             sys.executable, str(SCRIPT_DIR / "antigravity_usage_tui_snapshot.py"),
@@ -1023,6 +1043,10 @@ def main(argv: list[str]) -> int:
         futures = {name: executor.submit(run, command, max(10.0, args.timeout + 10), cwd) for name, command in commands.items()}
         results = {name: future.result() for name, future in futures.items()}
     results["local_system"] = system_result
+    if cli_present("opencode") and not args.opencode_go_usage_endpoint:
+        results["opencode_go_quota"] = skipped_result(
+            "no explicitly verified OpenCode Go usage endpoint configured; balance remains unknown"
+        )
 
     for name, cli in (
         ("codex_usage", "codex"),
